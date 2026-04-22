@@ -112,7 +112,7 @@
     <div class="login-card">
       <label class="login-label">API Key de Google Gemini</label>
       <input type="password" id="apikey-input" class="login-input" placeholder="AIzaSy...">
-<p class="login-hint"></p>     
+      <p class="login-hint">Obtené tu key gratis en <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com</a></p>
       <button class="btn-primary" id="btn-login" disabled>Continuar</button>
     </div>
   </div>
@@ -306,8 +306,8 @@ function fileToBase64(file) {
   });
 }
 
-async function callGemini(base64Data) {
-  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent?key=" + apiKey;
+async function callGeminiWithModel(base64Data, model) {
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -332,6 +332,36 @@ async function callGemini(base64Data) {
   const text = data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text;
   if (!text) throw new Error("Respuesta vacía de Gemini");
   return JSON.parse(text.replace(/```json/g, "").replace(/```/g, "").trim());
+}
+
+const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"];
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 4000;
+
+async function callGemini(base64Data) {
+  for (let m = 0; m < FALLBACK_MODELS.length; m++) {
+    var model = FALLBACK_MODELS[m];
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        progressFile.textContent = progressFile.textContent.split(" (")[0] + (m > 0 || attempt > 0 ? " (" + model + ", intento " + (attempt + 1) + ")" : "");
+        var result = await callGeminiWithModel(base64Data, model);
+        return result;
+      } catch (err) {
+        var isOverloaded = err.message.indexOf("429") !== -1 || err.message.indexOf("503") !== -1 || err.message.indexOf("overloaded") !== -1 || err.message.indexOf("RESOURCE_EXHAUSTED") !== -1;
+        if (isOverloaded && (attempt < MAX_RETRIES || m < FALLBACK_MODELS.length - 1)) {
+          var waitTime = RETRY_DELAY_MS * Math.pow(2, attempt);
+          progressFile.textContent = progressFile.textContent.split(" (")[0] + " (esperando " + Math.round(waitTime/1000) + "s...)";
+          await new Promise(r => setTimeout(r, waitTime));
+          continue;
+        }
+        if (isOverloaded && m < FALLBACK_MODELS.length - 1) {
+          break; // try next model
+        }
+        throw err; // non-retryable error, fail immediately
+      }
+    }
+  }
+  throw new Error("Todos los modelos fallaron. Intentá de nuevo en unos minutos.");
 }
 
 function normalizeNumForCompare(num) {
@@ -526,3 +556,4 @@ function resetUI() {
 </script>
 </body>
 </html>
+
