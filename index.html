@@ -92,6 +92,8 @@
 
   .btn-new { margin-top: 8px; padding: 10px 24px; background: none; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; color: #888; font-size: 13px; cursor: pointer; font-family: 'Space Grotesk', sans-serif; width: 100%; }
   .btn-new:hover { border-color: rgba(255,255,255,0.15); color: #aaa; }
+  .btn-galicia { margin-top: 12px; padding: 12px 24px; background: linear-gradient(135deg, #f97316, #ea580c); border: none; border-radius: 8px; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; font-family: 'Space Grotesk', sans-serif; width: 100%; letter-spacing: 0.5px; }
+  .btn-galicia:hover { background: linear-gradient(135deg, #ea580c, #c2410c); }
 
   @media (max-width: 600px) {
     .stats { grid-template-columns: repeat(2, 1fr); }
@@ -155,6 +157,7 @@
 
     <div class="stats" id="stats-container" style="display:none"></div>
     <div id="results-container"></div>
+    <button class="btn-galicia" id="btn-galicia" style="display:none">📥 Descargar Excel Galicia</button>
     <button class="btn-new" id="btn-new" style="display:none">Nuevo análisis</button>
   </div>
 </div>
@@ -188,6 +191,7 @@ RESPUESTA: JSON valido, sin markdown, sin backticks:
     "numero": "91305",
     "proveedor": "NOMBRE DEL PROVEEDOR"
   },
+  "transferencia_galicia": null,
   "comparaciones": [
     {
       "numero_factura_sistema": "00003-00001075",
@@ -202,11 +206,22 @@ RESPUESTA: JSON valido, sin markdown, sin backticks:
   ]
 }
 
+DATOS DE TRANSFERENCIA GALICIA:
+En la seccion "MEDIOS DE PAGO" de la primera pagina, fijate si aparece "BGCC" o "BCO GAL" o codigo "(839)". Si aparece, el pago es por transferencia directa Galicia. En ese caso, completa el campo "transferencia_galicia" con:
+{
+  "cbu": "el CBU que aparece en FORMA DE PAGO (22 digitos)",
+  "monto": el IMPORTE total de la seccion MEDIOS DE PAGO (es el monto neto a transferir),
+  "email": "el email del proveedor que aparece en DATOS DEL PROVEEDOR",
+  "descripcion": "OP XXXXX - NOMBRE PROVEEDOR"
+}
+Si el medio de pago NO es Galicia (por ejemplo es "BGSNP" = Sistema Nacional de Pagos, u otro banco), deja transferencia_galicia como null.
+
 CRITICO: Analiza cada factura por separado. No marques error en una factura solo porque otra tiene problemas. Se preciso.`;
 
 let apiKey = "";
 let files = [];
 let results = [];
+let galiciaTransfers = [];
 
 // DOM refs
 const loginScreen = document.getElementById("login-screen");
@@ -226,6 +241,7 @@ const progressFile = document.getElementById("progress-file");
 const statsContainer = document.getElementById("stats-container");
 const resultsContainer = document.getElementById("results-container");
 const btnNew = document.getElementById("btn-new");
+const btnGalicia = document.getElementById("btn-galicia");
 
 // Events
 apiKeyInput.addEventListener("input", () => {
@@ -437,6 +453,21 @@ async function processAllFiles() {
 
   progressBox.style.display = "none";
   renderStats();
+  
+  // Collect Galicia transfers
+  galiciaTransfers = [];
+  results.forEach(function(r) {
+    if (r.data && r.data.transferencia_galicia) {
+      galiciaTransfers.push(r.data.transferencia_galicia);
+    }
+  });
+  if (galiciaTransfers.length > 0) {
+    btnGalicia.style.display = "block";
+    btnGalicia.textContent = "📥 Descargar Excel Galicia (" + galiciaTransfers.length + " transferencia" + (galiciaTransfers.length > 1 ? "s" : "") + ")";
+  } else {
+    btnGalicia.style.display = "none";
+  }
+  
   btnNew.style.display = "block";
 }
 
@@ -540,6 +571,7 @@ function renderStats() {
 function resetAnalysis() {
   files = [];
   results = [];
+  galiciaTransfers = [];
   resetUI();
 }
 
@@ -552,8 +584,41 @@ function resetUI() {
   statsContainer.innerHTML = "";
   resultsContainer.innerHTML = "";
   btnNew.style.display = "none";
+  btnGalicia.style.display = "none";
 }
+
+function downloadGaliciaExcel() {
+  if (galiciaTransfers.length === 0) return;
+  
+  // Build CSV content matching Galicia template columns
+  var header = "CBU/CVU/Alias/Nro cuenta,Monto,Concepto,Descripción (opcional),Email destinatario (opcional),Mensaje del email (opcional)";
+  var rows = galiciaTransfers.map(function(t) {
+    var cbu = (t.cbu || "").replace(/[,]/g, "");
+    var monto = (t.monto || 0).toString().replace(".", ",");
+    var concepto = "VAR";
+    var descripcion = (t.descripcion || "").replace(/[,]/g, " ");
+    var email = (t.email || "").replace(/[,]/g, "");
+    var mensaje = "Pago " + descripcion;
+    return cbu + "," + monto + "," + concepto + "," + descripcion + "," + email + "," + mensaje;
+  });
+  
+  var csvContent = "\uFEFF" + header + "\n" + rows.join("\n");
+  var blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  var today = new Date();
+  var dateStr = today.getFullYear() + "-" + String(today.getMonth()+1).padStart(2,"0") + "-" + String(today.getDate()).padStart(2,"0");
+  a.download = "Transferencias_Galicia_" + dateStr + ".csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+btnGalicia.addEventListener("click", downloadGaliciaExcel);
 </script>
 </body>
 </html>
+
 
