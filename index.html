@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Analizador de Legajos</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #0f0f23; color: #e8e8e8; font-family: 'Space Grotesk', sans-serif; min-height: 100vh; }
@@ -590,30 +591,47 @@ function resetUI() {
 function downloadGaliciaExcel() {
   if (galiciaTransfers.length === 0) return;
   
-  // Build CSV content matching Galicia template columns
-  var header = "CBU/CVU/Alias/Nro cuenta,Monto,Concepto,Descripción (opcional),Email destinatario (opcional),Mensaje del email (opcional)";
-  var rows = galiciaTransfers.map(function(t) {
-    var cbu = (t.cbu || "").replace(/[,]/g, "");
-    var monto = (t.monto || 0).toString().replace(".", ",");
-    var concepto = "VAR";
-    var descripcion = (t.descripcion || "").replace(/[,]/g, " ");
-    var email = (t.email || "").replace(/[,]/g, "");
-    var mensaje = "Pago " + descripcion;
-    return cbu + "," + monto + "," + concepto + "," + descripcion + "," + email + "," + mensaje;
+  // Build data array matching Galicia template
+  var headers = [
+    "CBU/CVU/Alias/Nro cuenta",
+    "Monto",
+    "Concepto",
+    "Descripción\n(opcional)",
+    "Email destinatario\n(opcional)",
+    "Mensaje del email\n(opcional)"
+  ];
+  
+  var data = [headers];
+  galiciaTransfers.forEach(function(t) {
+    data.push([
+      (t.cbu || "").toString(),
+      t.monto || 0,
+      "VAR",
+      t.descripcion || "",
+      t.email || "",
+      "Pago " + (t.descripcion || "")
+    ]);
   });
   
-  var csvContent = "\uFEFF" + header + "\n" + rows.join("\n");
-  var blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement("a");
-  a.href = url;
+  // Create workbook
+  var wb = XLSX.utils.book_new();
+  var ws = XLSX.utils.aoa_to_sheet(data);
+  
+  // Set column widths
+  ws["!cols"] = [
+    { wch: 35 }, // CBU
+    { wch: 15 }, // Monto
+    { wch: 12 }, // Concepto
+    { wch: 40 }, // Descripcion
+    { wch: 30 }, // Email
+    { wch: 40 }  // Mensaje
+  ];
+  
+  XLSX.utils.book_append_sheet(wb, ws, "Transferencias");
+  
   var today = new Date();
   var dateStr = today.getFullYear() + "-" + String(today.getMonth()+1).padStart(2,"0") + "-" + String(today.getDate()).padStart(2,"0");
-  a.download = "Transferencias_Galicia_" + dateStr + ".csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  XLSX.writeFile(wb, "Transferencias_Galicia_" + dateStr + ".xls");
 }
 
 btnGalicia.addEventListener("click", downloadGaliciaExcel);
